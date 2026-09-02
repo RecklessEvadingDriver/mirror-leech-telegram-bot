@@ -1,0 +1,2369 @@
+FileHub is a heavily customized production-focused fork of Mirror-Leech-Telegram-Bot.
+
+DO NOT create a separate demo project.
+
+DO NOT rewrite the project from scratch.
+
+DO NOT replace working functionality unnecessarily.
+
+Inspect the existing repository first, understand the current architecture, then incrementally implement the features below using the existing engines, Telegram handlers, MongoDB layer, queue system, downloader/uploaders, FFmpeg functionality, and FileHub platform modules.
+
+## CRITICAL RULES
+
+* No mock data.
+* No fake API responses.
+* No placeholder buttons.
+* No dead UI.
+* No fake dashboards.
+* No hardcoded test credentials.
+* No fake task status.
+* No stub features presented as completed.
+* Every visible feature must be connected to real application state.
+* Every button must perform a real action or clearly be marked unavailable.
+* Do not silently break existing MLTB functionality.
+* Preserve backwards compatibility wherever practical.
+* Do not weaken authentication or authorization.
+* Owner-only functionality must remain owner-only unless explicitly redesigned with a safer permission model.
+* Never expose secrets in logs, Telegram messages, HTTP responses, exceptions, or dashboards.
+* Never disable TLS certificate verification just to make something work.
+* Never use `eval()` or equivalent unsafe dynamic execution for user-controlled values.
+* Never deserialize attacker-controlled pickle data.
+* Never use `shell=True` when an argument-list subprocess call can be used.
+* Do not use world-writable filesystem permissions.
+* Avoid broad exception swallowing.
+* Add timeouts to all external network operations.
+* Validate all untrusted input.
+* Apply rate limiting where appropriate.
+* Keep implementation modular and production-ready.
+* Do not claim a feature is complete until it has been integrated and tested.
+
+---
+
+# 1. FILEHUB CORE TASK ENGINE
+
+Build a stronger unified task model around the existing download/upload architecture.
+
+Each task should expose:
+
+* unique task ID
+* Telegram message ID
+* user ID
+* chat ID
+* source
+* normalized source fingerprint
+* download engine
+* upload destination
+* task type
+* priority
+* queue position
+* state
+* current stage
+* progress
+* downloaded bytes
+* uploaded bytes
+* total size
+* speed
+* ETA
+* creation time
+* start time
+* completion time
+* retry count
+* error
+* worker ID
+* workflow ID
+* metadata
+* result links
+
+Task stages should support:
+
+* queued
+* validating
+* resolving
+* downloading
+* verifying
+* extracting
+* archiving
+* processing
+* transcoding
+* splitting
+* uploading
+* seeding
+* completed
+* failed
+* cancelled
+* paused
+
+Do not duplicate the existing task system unnecessarily. Introduce adapters/wrappers where required.
+
+---
+
+# 2. INTERACTIVE TASK DASHBOARD
+
+Create a modern Telegram task control interface.
+
+Add:
+
+`/dashboard`
+
+`/tasks`
+
+Each task should support real controls where technically supported:
+
+* refresh
+* cancel
+* pause
+* resume
+* retry
+* force start
+* increase priority
+* decrease priority
+* inspect files
+* inspect metadata
+* destination info
+* logs/error details
+* retry failed stage
+* open result
+
+Never allow users to control another user's tasks unless they have explicit admin permission.
+
+---
+
+# 3. SMART QUEUE AND SCHEDULER
+
+Upgrade task scheduling.
+
+Support:
+
+* global download slots
+* global upload slots
+* global processing slots
+* FFmpeg-specific slots
+* CPU-heavy task slots
+* GPU task slots
+* per-user concurrent task limit
+* per-user download limit
+* per-user upload limit
+* owner/admin priority
+* weighted fair scheduling
+* task priorities
+* forced start
+* queue starvation prevention
+* configurable scheduling policy
+
+Queue state should survive process restarts when persistence is enabled.
+
+---
+
+# 4. PERSISTENT TASK RECOVERY
+
+Implement restart recovery.
+
+Persist enough task metadata to reconstruct recoverable jobs.
+
+Where supported:
+
+* aria2 partial downloads should resume
+* qBittorrent torrents should resume
+* rclone transfers should resume/restart safely
+* upload stages should resume when possible
+* completed download should not be downloaded again merely because upload failed
+* FFmpeg failure should not force redownload
+* archive failure should retry archive stage
+* task checkpoints should record stage completion
+
+Implement graceful restart:
+
+1. stop accepting new tasks
+2. allow configurable drain timeout
+3. persist state
+4. stop workers
+5. restart
+6. restore recoverable tasks
+
+---
+
+# 5. RETRY ENGINE
+
+Add configurable retry policies.
+
+Support:
+
+* max retries
+* retry delay
+* exponential backoff
+* jitter
+* retry only failed stage
+* retry another provider
+* retry another worker
+* retry another storage destination
+* network-error classification
+* permanent-error classification
+
+Examples of permanent failures:
+
+* file deleted
+* invalid credentials
+* unsupported URL
+* permission denied
+* malformed torrent
+
+Avoid infinite retry loops.
+
+---
+
+# 6. REDIS PLATFORM LAYER
+
+Add optional Redis support.
+
+Redis must not be required for single-node deployments.
+
+Use Redis for:
+
+* L2 cache
+* distributed locks
+* request deduplication
+* worker heartbeats
+* rate limiting
+* shared queue state
+* ephemeral web sessions
+* temporary signed tokens
+* event pub/sub
+* provider circuit breakers
+* task coordination
+* cache invalidation
+* distributed task leases
+
+Support configuration by URL.
+
+If Redis is disabled, retain safe in-memory fallbacks where possible.
+
+---
+
+# 7. CACHING SYSTEM
+
+Implement a proper multi-layer cache.
+
+## L1
+
+In-process memory cache.
+
+Use bounded LRU/TTL behavior.
+
+## L2
+
+Optional Redis shared cache.
+
+Implement cache namespaces.
+
+Examples:
+
+* metadata
+* direct-links
+* yt-dlp
+* gallery-dl
+* Drive
+* rclone
+* S3
+* WebDAV
+* RSS
+* health
+* search
+* archive indexes
+* media info
+* thumbnails
+* provider capabilities
+
+Support:
+
+* configurable TTL
+* stale-while-revalidate where useful
+* negative caching
+* cache invalidation
+* manual cache purge
+* cache hit/miss counters
+* cache size/entry limits
+
+Add:
+
+`/cache`
+
+Admin-only controls:
+
+* stats
+* clear namespace
+* clear user cache
+* clear all
+* provider cache health
+
+Do not globally cache user-authenticated signed URLs.
+
+Introduce cache scopes:
+
+* global/public
+* deployment
+* worker
+* user
+* task
+
+---
+
+# 8. REQUEST COALESCING
+
+If multiple requests resolve the same URL concurrently:
+
+* perform one resolver request
+* allow other tasks to await the same resolution
+* return the result to all waiting callers
+* release waiters safely on failure
+
+Use distributed locks when Redis is available.
+
+---
+
+# 9. COMPLETED FILE DEDUPLICATION
+
+Implement file reuse.
+
+Create source fingerprints based on appropriate identifiers:
+
+* normalized HTTP URL
+* torrent infohash
+* Google Drive file ID
+* Telegram file unique ID
+* rclone remote/path + metadata
+* provider content ID
+
+When possible calculate:
+
+SHA-256
+
+Store:
+
+* hash
+* size
+* location
+* provider
+* timestamp
+* owner/scope
+* source fingerprint
+
+Before downloading:
+
+1. check cache index
+2. verify cached object still exists
+3. validate size/hash if available
+4. reuse or server-side copy
+5. avoid unnecessary download
+
+Never leak another user's private cached object.
+
+---
+
+# 10. HTTP CACHE VALIDATION
+
+For HTTP sources support:
+
+* ETag
+* Last-Modified
+* If-None-Match
+* If-Modified-Since
+* Content-Length
+* Accept-Ranges
+
+Do not blindly reuse stale content.
+
+---
+
+# 11. TORRENT CACHE
+
+Use torrent infohash as canonical identity.
+
+Detect:
+
+* already active torrent
+* already completed torrent
+* existing local data
+* existing seed
+* duplicate request
+
+Allow multiple users to reference the same underlying task safely where policy permits.
+
+Do not cancel shared underlying work just because one dependent user cancels.
+
+---
+
+# 12. YT-DLP CACHE
+
+Cache extraction metadata separately from ephemeral media URLs.
+
+Cache:
+
+* title
+* duration
+* uploader
+* thumbnail
+* available formats
+* subtitle languages
+* playlist metadata
+
+Use a shorter TTL for:
+
+* signed/CDN URLs
+* media manifests
+* session-specific URLs
+
+Do not cache cookies or authentication headers in shared cache.
+
+---
+
+# 13. CLOUD STORAGE ABSTRACTION
+
+Finish the storage-provider architecture.
+
+Common operations:
+
+* stat
+* list
+* upload
+* download
+* copy
+* move
+* delete
+* rename
+* quota
+* share
+* exists
+* checksum
+* server-side copy capability
+
+Implement concrete adapters for existing providers rather than replacing working code.
+
+---
+
+# 14. S3-COMPATIBLE STORAGE
+
+Add real support for:
+
+* AWS S3
+* Cloudflare R2
+* Backblaze B2 S3
+* Wasabi
+* MinIO
+* DigitalOcean Spaces
+* generic S3-compatible endpoints
+
+Support:
+
+* multipart uploads
+* configurable chunk sizes
+* retry
+* abort incomplete multipart uploads
+* server-side copy
+* bucket browsing
+* prefixes/folders
+* custom endpoint URL
+* region
+* path-style vs virtual-hosted style
+* private/public object policies
+* presigned URLs
+
+Never expose access keys.
+
+---
+
+# 15. WEBDAV STORAGE
+
+Add real WebDAV support.
+
+Support:
+
+* Nextcloud
+* ownCloud
+* generic WebDAV
+* compatible providers
+
+Operations:
+
+* upload
+* download
+* browse
+* mkdir
+* delete
+* rename
+* move
+* copy
+* quota when provider supports it
+
+Use proper authentication and TLS verification.
+
+---
+
+# 16. STORAGE PROFILES
+
+Allow users/admins to create named storage profiles.
+
+Examples:
+
+* Main Drive
+* Backup R2
+* Personal WebDAV
+* Telegram Archive
+
+A profile may include:
+
+* provider
+* destination path
+* visibility
+* defaults
+* optional retention settings
+
+Do not expose secrets when displaying profiles.
+
+---
+
+# 17. STORAGE BROWSER
+
+Create interactive browsing for:
+
+* Google Drive
+* rclone
+* S3
+* WebDAV
+
+Support:
+
+* folders
+* pagination
+* back
+* root
+* select
+* search
+* recent paths
+* favorite paths
+
+Prevent callback manipulation from accessing unauthorized providers or paths.
+
+---
+
+# 18. MULTI-DESTINATION UPLOAD
+
+Allow one task to upload to several destinations.
+
+Modes:
+
+* parallel
+* sequential
+* primary + backup
+* first-success
+* all-required
+
+Track each upload independently.
+
+Example:
+
+Download once
+
+then upload to:
+
+* Telegram
+* Google Drive
+* R2
+
+A failure in one destination must not necessarily invalidate successful uploads to others.
+
+---
+
+# 19. STORAGE REPLICATION
+
+Support replication rules.
+
+Examples:
+
+* Drive + R2
+* S3 + WebDAV
+* Telegram + Drive
+
+Provide destination-specific status.
+
+---
+
+# 20. SMART STORAGE ROUTING
+
+Allow configurable routing rules.
+
+Examples:
+
+* file < 2 GB → Telegram
+* 2–20 GB → Drive
+* > 20 GB → R2
+* archives → S3
+* videos → Drive
+* backups → WebDAV + R2
+
+Rules must be explicit and inspectable.
+
+---
+
+# 21. CLOUD-TO-CLOUD TRANSFER
+
+Support:
+
+* Drive → rclone
+* Drive → S3
+* S3 → WebDAV
+* rclone → S3
+* WebDAV → Drive
+* compatible combinations
+
+Prefer server-side copy when possible.
+
+Avoid routing through local disk unnecessarily when a native copy operation exists.
+
+---
+
+# 22. WORKFLOW ENGINE
+
+Expand the existing FileHub workflow foundation.
+
+Workflow stages can include:
+
+* resolve
+* download
+* verify
+* extract
+* archive
+* rename
+* FFmpeg
+* screenshot
+* sample generation
+* subtitle operation
+* audio operation
+* checksum
+* virus scan
+* upload
+* replicate
+* notify
+* cleanup
+
+Workflow example:
+
+Download
+→ Verify
+→ Extract
+→ Rename
+→ FFmpeg remux
+→ Upload Drive
+→ Upload R2
+→ Send Telegram result
+→ Cleanup
+
+---
+
+# 23. WORKFLOW UI
+
+Upgrade:
+
+`/workflows`
+
+Allow:
+
+* list
+* create
+* inspect
+* rename
+* duplicate
+* edit
+* delete
+* enable
+* disable
+* run
+* favorite
+
+Implement safe structured workflow editing.
+
+Never parse arbitrary Python expressions.
+
+---
+
+# 24. CONDITIONAL WORKFLOWS
+
+Support conditions:
+
+* extension
+* MIME type
+* size
+* provider
+* resolution
+* codec
+* task owner
+* source type
+
+Examples:
+
+If `.zip`
+→ extract
+
+If video >1080p
+→ create 1080p copy
+
+If size > Telegram limit
+→ use Drive
+
+Use a safe declarative condition engine.
+
+Do not use `eval()`.
+
+---
+
+# 25. SMART SOURCE DETECTION
+
+Given one URL or message, automatically identify:
+
+* HTTP file
+* magnet
+* torrent
+* Telegram
+* Google Drive
+* rclone
+* yt-dlp
+* gallery-dl
+* NZB
+* JDownloader
+* supported direct-link host
+
+Show detected engine before execution when useful.
+
+---
+
+# 26. PROVIDER FALLBACK CHAIN
+
+Support configurable resolver fallback.
+
+Example:
+
+direct-link resolver
+→ yt-dlp
+→ JDownloader
+→ plain HTTP
+
+Only use providers appropriate for the source.
+
+Record why each fallback failed.
+
+---
+
+# 27. PROVIDER CIRCUIT BREAKER
+
+Track provider health.
+
+If a provider repeatedly fails:
+
+* temporarily mark degraded
+* avoid repeatedly sending traffic
+* periodically retry health
+* automatically recover
+
+Display in `/doctor`.
+
+---
+
+# 28. ARCHIVE ENGINE IMPROVEMENTS
+
+Add:
+
+* archive listing
+* selective extraction
+* password support
+* multipart archive detection
+* recursion depth limit
+* extraction size limit
+* compression ratio limit
+* path traversal protection
+* symlink protection
+* disk-space validation
+
+Detect archive bombs.
+
+---
+
+# 29. MEDIA INSPECTOR
+
+Add:
+
+`/mediainfo`
+
+Show:
+
+* container
+* video codec
+* audio codec
+* resolution
+* FPS
+* bitrate
+* HDR
+* duration
+* audio tracks
+* subtitle tracks
+* language
+* chapters
+
+Cache media analysis safely.
+
+---
+
+# 30. FFMPEG PRESETS
+
+Provide configurable presets:
+
+* remux
+* 1080p H264
+* 1080p HEVC
+* 720p
+* AV1
+* audio-only
+* MP3
+* AAC
+* FLAC
+* Telegram compression
+
+Allow admin-defined presets.
+
+Do not allow arbitrary untrusted shell injection.
+
+---
+
+# 31. HARDWARE TRANSCODING
+
+Detect:
+
+* NVIDIA NVENC
+* Intel Quick Sync
+* VAAPI
+* AMD-supported acceleration where available
+
+Expose capability in `/doctor`.
+
+Create separate CPU/GPU processing slots.
+
+Fallback safely to software encoding.
+
+---
+
+# 32. SUBTITLE TOOLS
+
+Support:
+
+* extract subtitles
+* convert SRT/VTT/ASS
+* remove subtitle tracks
+* embed subtitles
+* select preferred language
+
+---
+
+# 33. AUDIO TOOLS
+
+Support:
+
+* extract audio
+* convert audio
+* select language
+* remove tracks
+* merge audio
+* normalization where appropriate
+
+---
+
+# 34. THUMBNAILS AND CONTACT SHEETS
+
+Add:
+
+* automatic thumbnails
+* chosen frame
+* custom thumbnail
+* multiple thumbnails
+* contact sheet generation
+* cached thumbnail reuse
+
+---
+
+# 35. SMART FILE NAMING
+
+Add safe rename templates.
+
+Examples:
+
+`{title} [{quality}] [{codec}]`
+
+`{date}_{name}`
+
+`{original}`
+
+Allow:
+
+* substitutions
+* regex substitutions with safe limits
+* illegal filename cleanup
+* duplicate whitespace cleanup
+* URL-decoding cleanup
+
+---
+
+# 36. CHECKSUM SYSTEM
+
+Support:
+
+* MD5
+* SHA1
+* SHA256
+
+Functions:
+
+* generate
+* verify
+* save checksum file
+* compare before reuse
+* compare cloud object metadata when supported
+
+---
+
+# 37. OPTIONAL MALWARE SCANNING
+
+Support optional ClamAV integration.
+
+Do not require ClamAV by default.
+
+Allow policies:
+
+* disabled
+* scan executables only
+* scan archives
+* scan everything below configured size
+
+Do not delete files automatically without policy.
+
+---
+
+# 38. SMART DISK MANAGEMENT
+
+Before accepting large tasks:
+
+* determine expected size when possible
+* verify free disk
+* reserve disk capacity
+* account for extraction/transcoding overhead
+
+Pause/deny jobs when free disk becomes dangerous.
+
+---
+
+# 39. AUTOMATIC CLEANUP
+
+Add retention policies:
+
+* delete local completed files after X
+* delete failed temporary files after X
+* preserve seed files until seeding completes
+* delete orphaned task directories
+* clean expired cache
+* clean stale multipart uploads
+
+Never delete active task data.
+
+---
+
+# 40. MULTI-WORKER ARCHITECTURE
+
+Support multiple FileHub workers.
+
+Central bot should track:
+
+* worker ID
+* hostname
+* region
+* CPU
+* RAM
+* disk
+* GPU
+* supported engines
+* available storage
+* current task count
+* health
+* heartbeat
+
+Use Redis or another appropriate coordination mechanism.
+
+---
+
+# 41. WORKER SCHEDULING
+
+Assign workers using:
+
+* free disk
+* CPU
+* RAM
+* current jobs
+* region
+* GPU requirement
+* provider availability
+* storage locality
+* configured priority
+
+---
+
+# 42. WORKER DRAINING
+
+Support maintenance mode.
+
+Worker can:
+
+* stop accepting new jobs
+* finish current jobs
+* become offline safely
+
+---
+
+# 43. TASK MIGRATION
+
+Where technically possible:
+
+* requeue failed task on another worker
+* preserve completed stages
+* avoid redownloading when shared storage/cache permits
+
+Do not claim transparent migration for protocols that cannot support it.
+
+---
+
+# 44. ADMIN DASHBOARD
+
+Upgrade `/dashboard` for owner/admins.
+
+Show:
+
+* active jobs
+* queued jobs
+* failed jobs
+* completed jobs
+* workers
+* engine health
+* cache stats
+* Redis health
+* Mongo health
+* CPU
+* RAM
+* disk
+* bandwidth
+* provider status
+* users
+* quotas
+* recent errors
+
+Add real control actions.
+
+---
+
+# 45. USER ROLES
+
+Introduce granular roles:
+
+* owner
+* admin
+* sudo
+* premium
+* authorized
+* guest
+
+Do not remove existing permission behavior without migration support.
+
+---
+
+# 46. GRANULAR PERMISSIONS
+
+Examples:
+
+* task.create
+* task.cancel.any
+* task.priority
+* storage.browse
+* storage.delete
+* Drive.delete
+* workflow.create
+* RSS.manage
+* FFmpeg.use
+* admin.settings
+* admin.users
+* shell
+* exec
+
+Owner-level shell/exec must never become ordinary-user functionality.
+
+---
+
+# 47. TEMPORARY AUTHORIZATION
+
+Allow admins to grant:
+
+* 1 hour
+* 24 hours
+* 7 days
+* custom expiration
+
+Expired authorization must revoke automatically.
+
+---
+
+# 48. QUOTA SYSTEM
+
+Add configurable quotas:
+
+* concurrent tasks
+* daily transfer
+* monthly transfer
+* max single-file size
+* total task size
+* FFmpeg usage
+* API usage
+* storage usage
+* bandwidth
+
+Quota usage must come from real task data.
+
+---
+
+# 49. API SERVER
+
+Create optional authenticated REST API.
+
+Endpoints should include:
+
+* create task
+* list tasks
+* get task
+* cancel task
+* retry task
+* history
+* workflows
+* storage listing
+* health
+* worker status
+
+Use versioned routes.
+
+Example:
+
+`/api/v1/...`
+
+---
+
+# 50. API KEYS
+
+Support per-user API keys.
+
+Store hashed keys.
+
+Never store plain API keys after creation.
+
+Support scopes.
+
+Allow:
+
+* create
+* revoke
+* rotate
+* expiration
+* last-used timestamp
+
+---
+
+# 51. WEB DASHBOARD
+
+Create an optional modern responsive FileHub web dashboard.
+
+Use real backend APIs.
+
+Pages:
+
+* overview
+* tasks
+* task details
+* queue
+* storage
+* workers
+* workflows
+* history
+* cache
+* providers
+* users
+* settings
+* logs
+* health
+
+Do not build fake UI disconnected from the backend.
+
+---
+
+# 52. WEB SECURITY
+
+Web sessions must use:
+
+* cryptographically secure random tokens
+* short expiration
+* CSRF protection where applicable
+* secure cookies
+* HttpOnly
+* SameSite
+* HTTPS awareness
+* authorization checks server-side
+
+Never trust hidden UI state.
+
+---
+
+# 53. TEMPORARY SHARE LINKS
+
+Support signed temporary download/share URLs when providers permit.
+
+Allow:
+
+* expiration
+* optional password
+* optional download limit
+* revocation
+
+Do not expose filesystem paths.
+
+---
+
+# 54. PROMETHEUS METRICS
+
+Expose optional metrics.
+
+Include:
+
+* active tasks
+* queued tasks
+* completed tasks
+* failed tasks
+* bytes downloaded
+* bytes uploaded
+* cache hits
+* cache misses
+* resolver failures
+* provider status
+* worker health
+* CPU
+* RAM
+* disk
+* retry count
+* API latency
+
+Never include sensitive labels like tokens or URLs containing credentials.
+
+---
+
+# 55. STRUCTURED LOGGING
+
+Introduce optional JSON logging.
+
+Every task should have:
+
+* task ID
+* user ID
+* worker
+* stage
+* provider
+
+Implement secret redaction.
+
+Redact:
+
+* BOT_TOKEN
+* Telegram session strings
+* Mongo credentials
+* Redis passwords
+* rclone credentials
+* OAuth tokens
+* S3 keys
+* authorization headers
+* cookies
+* signed URLs
+
+---
+
+# 56. AUDIT LOG
+
+Record sensitive administrative actions:
+
+* authorize
+* unauthorize
+* sudo changes
+* config changes
+* storage delete
+* quota changes
+* role changes
+* API key management
+* cache purge
+* workflow changes
+* admin task cancellation
+* shell/exec usage metadata
+
+Do not log shell secrets/output unnecessarily.
+
+---
+
+# 57. SECRET STORAGE
+
+Where practical, migrate secrets toward encrypted-at-rest storage.
+
+Use a deployment-provided encryption key.
+
+Do not invent weak encryption.
+
+Never hardcode the encryption key into the repository.
+
+---
+
+# 58. GOOGLE CREDENTIAL MODERNIZATION
+
+Investigate migration away from Python pickle OAuth credential files.
+
+Preferred approach:
+
+Google OAuth JSON credential serialization.
+
+Support safe migration for trusted administrator credentials.
+
+Stop accepting untrusted pickle input.
+
+---
+
+# 59. RATE LIMITING
+
+Implement:
+
+* command rate limits
+* API rate limits
+* resolver rate limits
+* login/session limits
+* storage operations limits
+
+Use Redis-backed limits when available.
+
+---
+
+# 60. SECURITY INPUT LIMITS
+
+Apply reasonable bounds to:
+
+* URLs
+* filenames
+* callback data
+* config values
+* archive entry counts
+* regex length
+* workflow size
+* JSON payloads
+* upload configuration
+* API bodies
+* pagination
+
+Prevent memory/CPU abuse.
+
+---
+
+# 61. SSRF PROTECTION
+
+Review all URL-fetching features.
+
+Protect against requests to:
+
+* localhost
+* loopback
+* link-local addresses
+* metadata endpoints
+* internal/private networks where not explicitly intended
+
+Handle redirects safely.
+
+Do not break legitimate administrator-configured internal services; distinguish trusted admin configuration from user-submitted URLs.
+
+---
+
+# 62. PATH SECURITY
+
+Prevent:
+
+* `../` traversal
+* absolute-path escapes
+* symlink escapes
+* arbitrary file overwrite
+* unauthorized access to private configs
+
+Resolve paths before filesystem operations.
+
+---
+
+# 63. CALLBACK SECURITY
+
+Audit every Telegram callback handler.
+
+Ensure:
+
+* callback belongs to expected user where necessary
+* owner/admin-only actions verify server-side permissions
+* identifiers cannot be manipulated to control another task
+* callback tokens are signed where appropriate
+* sensitive callbacks expire
+
+---
+
+# 64. WEB SELECTOR SECURITY
+
+Keep HMAC protection.
+
+Improve it with expiry.
+
+Sign:
+
+* task GID
+* user/session
+* expiration
+
+Use constant-time verification.
+
+Reject expired tokens.
+
+---
+
+# 65. TLS SECURITY
+
+Search entire repository for:
+
+* `verify=False`
+* disabled certificate checks
+* aria flags disabling certificate verification
+* curl `-k`
+* wget `--no-check-certificate`
+
+Remove them unless there is a very strongly documented reason.
+
+---
+
+# 66. NETWORK TIMEOUT AUDIT
+
+Search all HTTP libraries:
+
+* requests
+* httpx
+* aiohttp
+* urllib
+* curl
+* wget
+* rclone invocations
+
+Every externally reachable operation needs:
+
+* connect timeout
+* read timeout
+* bounded retry behavior
+
+No infinite hangs.
+
+---
+
+# 67. SUBPROCESS SECURITY
+
+Search for:
+
+* shell=True
+* os.system
+* shell interpolation
+* dynamic command strings
+
+Convert to argument lists wherever possible.
+
+For commands intentionally executed by `/shell`, retain OWNER-only access and document the risk.
+
+---
+
+# 68. DYNAMIC EXECUTION AUDIT
+
+Search for:
+
+* eval
+* exec
+* compile
+* literal config parsing
+* pickle
+* yaml unsafe load
+
+Remove unsafe user-reachable uses.
+
+Intentional OWNER-only `/exec` can remain only if:
+
+* permission remains OWNER-only
+* it is clearly documented
+* no callback/user bypass exists
+
+---
+
+# 69. XML SECURITY
+
+Use safe XML parsers.
+
+Prevent:
+
+* entity expansion
+* XXE
+* external entity fetching
+
+Continue using `defusedxml` where appropriate.
+
+---
+
+# 70. ARCHIVE SECURITY
+
+Test:
+
+* zip-slip
+* tar traversal
+* symlink escapes
+* nested archive bombs
+* huge compression ratio
+* excessive file counts
+
+---
+
+# 71. DATABASE SECURITY
+
+Audit Mongo usage.
+
+Ensure:
+
+* no user-controlled collection names without validation
+* no unsafe Mongo operator injection
+* proper index creation
+* TTL indexes where useful
+* task/history queries are bounded
+* no unbounded full-collection retrieval in user commands
+
+---
+
+# 72. REDIS SECURITY
+
+If Redis is remote:
+
+* support TLS
+* password/ACL
+* connection timeout
+* health checks
+* namespace keys by FileHub deployment
+
+Never use Redis as an authentication authority without expiration and signing where appropriate.
+
+---
+
+# 73. DEPENDENCY SECURITY
+
+Run:
+
+* `pip-audit`
+* Bandit
+* Ruff
+* dependency conflict checks
+
+Identify outdated/vulnerable packages.
+
+Do not blindly upgrade dependencies if it would break compatibility.
+
+Document necessary upgrades.
+
+---
+
+# 74. CONTAINER SECURITY
+
+Audit Dockerfile/container setup.
+
+Requirements:
+
+* no `chmod 777`
+* no unnecessary root runtime where avoidable
+* minimal privileges
+* correct volume permissions
+* secure private file permissions
+* no secrets baked into image
+* healthcheck
+* graceful shutdown
+
+---
+
+# 75. CONFIGURATION VALIDATOR
+
+Add startup validation.
+
+Check:
+
+* required values
+* malformed IDs
+* URLs
+* database
+* Redis
+* paths
+* storage credentials
+* duplicate settings
+* incompatible settings
+* ports
+* binaries
+* download directory
+* disk permissions
+
+Fail fast with useful messages for critical configuration.
+
+---
+
+# 76. /DOCTOR EXPANSION
+
+Upgrade `/doctor`.
+
+Check:
+
+* Telegram
+* MongoDB
+* Redis
+* aria2
+* qBittorrent
+* SABnzbd
+* JDownloader
+* FFmpeg
+* ffprobe
+* rclone
+* Google Drive
+* S3 profiles
+* WebDAV profiles
+* disk
+* memory
+* CPU
+* GPU
+* network
+* DNS
+* cache
+* workers
+
+Never reveal secrets.
+
+---
+
+# 77. PROVIDER HEALTH MONITORING
+
+Track:
+
+* latency
+* failures
+* last success
+* last error
+* circuit breaker state
+
+Expose in `/doctor` and admin dashboard.
+
+---
+
+# 78. EVENT SYSTEM
+
+Expand FileHub events.
+
+Examples:
+
+* task.created
+* task.queued
+* task.started
+* task.stage.changed
+* task.failed
+* task.completed
+* task.cancelled
+* provider.degraded
+* provider.recovered
+* worker.online
+* worker.offline
+* storage.upload.completed
+* workflow.started
+* workflow.completed
+
+Use events for:
+
+* history
+* audit
+* metrics
+* notifications
+* plugins
+
+---
+
+# 79. PLUGIN SYSTEM
+
+Create a safe plugin API.
+
+Plugins may register:
+
+* resolvers
+* storage providers
+* processors
+* workflow actions
+* notifications
+* health checks
+
+Each plugin should declare:
+
+* name
+* version
+* capabilities
+* config schema
+
+Do not automatically execute arbitrary downloaded plugins.
+
+Plugins must be installed by administrator.
+
+---
+
+# 80. NOTIFICATIONS
+
+Add configurable notification rules.
+
+Examples:
+
+* completion
+* failure
+* task moved from queue
+* quota reached
+* disk low
+* provider down
+* worker offline
+
+Support:
+
+* Telegram
+* generic webhook
+
+If implementing additional notification providers, keep them modular.
+
+---
+
+# 81. WEBHOOKS
+
+Support signed outgoing webhook events.
+
+Add:
+
+* timeout
+* retries
+* secret signature
+* delivery history
+* failure count
+
+Do not block task completion waiting forever for a webhook.
+
+---
+
+# 82. RSS IMPROVEMENTS
+
+Add:
+
+* persistent item history
+* duplicate prevention
+* advanced include/exclude rules
+* size filters
+* workflow execution
+* quality filters
+* episode detection where possible
+* safe regex limits
+
+---
+
+# 83. SEARCH AGGREGATION
+
+Create unified search across configured sources where appropriate:
+
+* Google Drive
+* rclone
+* S3
+* WebDAV
+* internal history
+* torrent search
+* NZB search
+
+Normalize results to one result schema.
+
+Apply authorization before showing storage results.
+
+---
+
+# 84. API/UI PAGINATION
+
+Every potentially large list should paginate.
+
+Never dump thousands of:
+
+* tasks
+* files
+* users
+* history records
+* storage entries
+* search results
+
+---
+
+# 85. USER SETTINGS
+
+Extend user preferences:
+
+* default destination
+* storage profile
+* filename template
+* yt-dlp preset
+* FFmpeg preset
+* notification settings
+* preferred audio language
+* preferred subtitle language
+* default workflow
+* quota display
+
+Allow safe import/export of non-secret settings.
+
+---
+
+# 86. GUIDED /NEW FLOW
+
+Add:
+
+`/new`
+
+Flow:
+
+1. choose source
+2. validate/detect source
+3. choose processing
+4. choose destination
+5. choose workflow
+6. review
+7. start
+
+Do not require users to memorize complex flags for ordinary usage.
+
+---
+
+# 87. FEATURE FLAGS
+
+Allow administrator to enable/disable:
+
+* NZB
+* torrents
+* JDownloader
+* yt-dlp
+* gallery-dl
+* S3
+* WebDAV
+* workflows
+* API
+* web dashboard
+* plugins
+* shell
+* exec
+
+Security-sensitive features should be disableable.
+
+---
+
+# 88. OWNER SHELL/EXEC HARDENING
+
+Keep current OWNER-only commands for compatibility.
+
+Add optional config:
+
+`ENABLE_OWNER_SHELL`
+
+`ENABLE_OWNER_EXEC`
+
+Default should favor production security if backwards compatibility permits.
+
+If disabled, handlers should not execute the command.
+
+---
+
+# 89. TEST SUITE
+
+Add comprehensive unit and integration tests.
+
+At minimum test:
+
+## Authentication
+
+* ordinary user cannot sudo
+* ordinary user cannot owner actions
+* callback ownership
+* temporary authorization expiry
+* role permission enforcement
+
+## Cache
+
+* TTL
+* cache hit
+* cache miss
+* invalidation
+* LRU eviction
+* per-user scope
+* request coalescing
+
+## Quotas
+
+* concurrent limit
+* daily limit
+* rate limit
+
+## Workflows
+
+* successful workflow
+* failed stage
+* continue_on_error
+* malicious condition input rejected
+
+## Storage
+
+* provider registry
+* destination validation
+* path validation
+
+## Security
+
+* malicious eval-like strings
+* path traversal
+* SSRF attempts
+* archive traversal
+* malformed callback
+* expired signed token
+* wrong signed token
+* unsafe URL redirect
+
+## Recovery
+
+* restore queued task
+* retry failed stage
+* cleanup state
+
+Do not use production credentials in tests.
+
+---
+
+# 90. CI/CD
+
+Update GitHub Actions.
+
+Required checks:
+
+* Python 3.11
+* Python 3.12
+* compileall
+* pytest
+* Ruff
+* Bandit
+* pip-audit
+* shell syntax
+* YAML syntax
+* Docker Compose config
+* configuration compile
+* security regression tests
+
+Security failures should eventually block merge after intentional findings are documented/baselined precisely.
+
+Do not broadly suppress Bandit findings.
+
+---
+
+# 91. SECURITY REPORT
+
+Create/update:
+
+`SECURITY_AUDIT.md`
+
+Document:
+
+* finding
+* severity
+* affected file
+* attack surface
+* exploitability
+* mitigation
+* status
+
+Classify:
+
+* Critical
+* High
+* Medium
+* Low
+* Informational
+
+Do not label a finding fixed unless the code was actually changed.
+
+---
+
+# 92. QA REPORT
+
+Update:
+
+`QA_REPORT.md`
+
+Include:
+
+* tests executed
+* test results
+* workflows checked
+* known limitations
+* security scan summary
+* dependency audit
+* deployment validation
+* remaining technical debt
+
+---
+
+# 93. README
+
+Update README as features become real.
+
+Include only implemented functionality.
+
+Do not advertise planned features as completed.
+
+Add architecture for:
+
+Telegram
+↓
+FileHub API/Core
+↓
+Task Scheduler
+↓
+Worker
+↓
+Downloader
+↓
+File Engine
+↓
+Storage
+↓
+Cache/Redis/Mongo
+
+---
+
+# 94. PERFORMANCE REVIEW
+
+Profile obvious bottlenecks.
+
+Review:
+
+* giant thread pools
+* unnecessary polling
+* duplicate API calls
+* large synchronous work in async event loop
+* excessive Mongo queries
+* repeated metadata extraction
+* status update spam
+
+Replace `ThreadPoolExecutor(max_workers=500)` with a sane configurable/bounded value unless strong evidence shows 500 is required.
+
+---
+
+# 95. RESOURCE LIMITS
+
+Protect server resources.
+
+Add configurable:
+
+* max worker threads
+* FFmpeg concurrency
+* extraction concurrency
+* hashing concurrency
+* resolver concurrency
+* total queue length
+* per-user queue length
+
+---
+
+# 96. DATABASE INDEXES
+
+Create appropriate Mongo indexes for:
+
+* task IDs
+* user IDs
+* timestamps
+* cache keys
+* workflow owner/name
+* API key hash
+* audit timestamp
+* history user/time
+
+Use TTL indexes for ephemeral data where useful.
+
+---
+
+# 97. DATABASE MIGRATIONS
+
+Introduce versioned schema migrations for FileHub-owned collections.
+
+Never silently destroy existing data.
+
+---
+
+# 98. BACKUP AND RESTORE
+
+Implement administrator-controlled backup of:
+
+* safe bot config
+* Mongo FileHub collections
+* workflow definitions
+* storage profile metadata
+* user preferences
+
+Handle secrets separately and securely.
+
+---
+
+# 99. UPDATE SAFETY
+
+Before automatic updates:
+
+* validate repository URL
+* backup important state
+* fetch update
+* validate code/config
+* restart
+* run health checks
+
+If the update is broken, provide a rollback path.
+
+---
+
+# 100. FINAL REPOSITORY-WIDE SECURITY PASS
+
+After implementation, search the ENTIRE repository for:
+
+`eval(`
+
+`exec(`
+
+`pickle`
+
+`shell=True`
+
+`os.system`
+
+`verify=False`
+
+`check-certificate=false`
+
+`--no-check-certificate`
+
+`chmod 777`
+
+`yaml.load`
+
+`subprocess`
+
+`requests.get`
+
+`requests.post`
+
+`aiohttp`
+
+`httpx`
+
+unsafe path joins
+
+raw exception responses
+
+token logging
+
+authorization bypasses
+
+callback handlers without ownership validation
+
+unbounded loops
+
+infinite retries
+
+network calls without timeout
+
+For every occurrence:
+
+* inspect context
+* fix unsafe cases
+* document intentional privileged cases
+
+---
+
+# IMPLEMENTATION APPROACH
+
+Do NOT attempt a giant rewrite in one commit.
+
+Work in logical production-ready batches.
+
+Recommended phases:
+
+## Phase A — Core reliability
+
+* task model
+* history
+* scheduler
+* recovery
+* retry
+* quotas
+
+## Phase B — Cache/Redis
+
+* L1 cache
+* Redis
+* dedupe
+* coalescing
+* cache stats
+
+## Phase C — Storage
+
+* S3/R2
+* WebDAV
+* profiles
+* browser
+* multi-upload
+* replication
+
+## Phase D — Workflows
+
+* workflow executor
+* conditions
+* presets
+* workflow UI
+
+## Phase E — Media/file engine
+
+* MediaInfo
+* FFmpeg presets
+* hardware acceleration
+* archive safety
+* checksum
+* subtitles/audio
+
+## Phase F — Multi-worker
+
+* heartbeats
+* worker scheduler
+* draining
+* distributed queue
+
+## Phase G — API/web
+
+* REST API
+* API keys
+* web dashboard
+* secure sessions
+
+## Phase H — Production security
+
+* full audit
+* hardening
+* tests
+* dependency review
+* Docker review
+
+---
+
+# AFTER EVERY PHASE
+
+Run:
+
+```bash
+python -m compileall bot web
+pytest -q
+ruff check .
+bandit -r bot web -ll
+pip-audit
+```
+
+Also validate:
+
+```bash
+bash -n *.sh
+docker compose config
+```
+
+Run all repository GitHub Actions.
+
+Fix regressions before moving forward.
+
+---
+
+# GIT RULES
+
+Work on:
+
+`filehub-dev`
+
+Use small meaningful commits.
+
+Examples:
+
+`feat: add redis-backed FileHub cache`
+
+`feat: add S3 and R2 storage backend`
+
+`feat: add WebDAV storage provider`
+
+`feat: add persistent task recovery`
+
+`feat: add multi-destination uploads`
+
+`feat: add FileHub workflow editor`
+
+`security: harden URL fetching against SSRF`
+
+`security: add callback ownership verification`
+
+`test: add FileHub security regression coverage`
+
+Do not force-push unless absolutely necessary.
+
+Do not directly modify `master`.
+
+The existing PR should update automatically from `filehub-dev`.
+
+---
+
+# COMPLETION CRITERIA
+
+A phase is complete only when:
+
+* implementation is real
+* UI is wired
+* authorization works
+* error states work
+* persistence works where applicable
+* no mock data is used
+* no secrets are exposed
+* unit/integration tests exist
+* existing tests still pass
+* repository QA passes
+* security scans are reviewed
+* README/docs reflect reality
+
+At the end provide a clear report containing:
+
+1. implemented features
+2. changed files
+3. commits
+4. tests run
+5. CI results
+6. security findings fixed
+7. remaining security findings
+8. remaining unfinished features
+9. migrations/config changes required
+10. deployment notes
+
+Do not say “everything is complete” unless every listed feature has genuinely been implemented and tested.
+
+The goal is to turn FileHub into a production-grade, secure, scalable, cache-aware, multi-storage, workflow-driven Telegram file automation platform while preserving and improving the proven functionality already present in the repository.
