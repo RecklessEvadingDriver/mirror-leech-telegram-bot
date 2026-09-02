@@ -125,7 +125,7 @@ class YoutubeDLHelper:
             task_dict[self._listener.mid] = YtDlpStatus(self._listener, self, self._gid)
         if not from_queue:
             await self._listener.on_download_start()
-            if self._listener.multi <= 1:
+            if self._listener.multi <= 1 and not self._listener.is_rss:
                 await send_status_message(self._listener.message)
 
     def _on_download_error(self, error):
@@ -252,8 +252,8 @@ class YoutubeDLHelper:
         start_path = path if self.keep_thumb else f"{path}/yt-dlp-thumb"
         if self.is_playlist:
             self.opts["outtmpl"] = {
-                "default": f"{path}/{self._listener.name}/%(title,fulltitle,alt_title)s%(season_number& |)s%(season_number&S|)s%(season_number|)02d%(episode_number&E|)s%(episode_number|)02d%(height& |)s%(height|)s%(height&p|)s%(fps|)s%(fps&fps|)s%(tbr& |)s%(tbr|)d.%(ext)s",
-                "thumbnail": f"{start_path}/%(title,fulltitle,alt_title)s%(season_number& |)s%(season_number&S|)s%(season_number|)02d%(episode_number&E|)s%(episode_number|)02d%(height& |)s%(height|)s%(height&p|)s%(fps|)s%(fps&fps|)s%(tbr& |)s%(tbr|)d.%(ext)s",
+                "default": f"{path}/{self._listener.name}/%(playlist_index)03d - %(title,fulltitle,alt_title)s%(season_number& |)s%(season_number&S|)s%(season_number|)02d%(episode_number&E|)s%(episode_number|)02d%(height& |)s%(height|)s%(height&p|)s%(fps|)s%(fps&fps|)s%(tbr& |)s%(tbr|)d.%(ext)s",
+                "thumbnail": f"{start_path}/%(playlist_index)03d - %(title,fulltitle,alt_title)s%(season_number& |)s%(season_number&S|)s%(season_number|)02d%(episode_number&E|)s%(episode_number|)02d%(height& |)s%(height|)s%(height&p|)s%(fps|)s%(fps&fps|)s%(tbr& |)s%(tbr|)d.%(ext)s",
             }
         elif "download_ranges" in options:
             self.opts["outtmpl"] = {

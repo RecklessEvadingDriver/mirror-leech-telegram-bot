@@ -1,9 +1,10 @@
+from ast import literal_eval
 from aiofiles.os import remove, path as aiopath, makedirs
 from asyncio import sleep
 from functools import partial
 from html import escape
 from io import BytesIO
-from os import getcwd
+from os import chmod, getcwd
 from pyrogram.filters import create
 from pyrogram.handlers import MessageHandler
 from time import time
@@ -42,9 +43,18 @@ leech_options = [
     "LEECH_DUMP_CHAT",
     "LEECH_FILENAME_PREFIX",
     "THUMBNAIL_LAYOUT",
+    "CLONE_DUMP_CHATS",
 ]
 rclone_options = ["RCLONE_CONFIG", "RCLONE_PATH", "RCLONE_FLAGS"]
 gdrive_options = ["TOKEN_PICKLE", "GDRIVE_ID", "INDEX_URL"]
+uploaders_options = ["BUZZHEAVIER_ACCOUNT_ID", "BUZZHEAVIER_FOLDER_ID"]
+
+
+def _parse_dict(value):
+    parsed = literal_eval(value)
+    if not isinstance(parsed, dict):
+        raise ValueError("Value must be a dictionary")
+    return parsed
 
 
 async def get_user_settings(from_user, stype="main"):
@@ -160,6 +170,21 @@ async def get_user_settings(from_user, stype="main"):
         else:
             hybrid_leech = "Disabled"
 
+        if (
+            user_dict.get("FILES_LINKS", False)
+            or "FILES_LINKS" not in user_dict
+            and Config.FILES_LINKS
+        ):
+            fl = "Enabled"
+            buttons.data_button(
+                "Disable FILES LINKS", f"userset {user_id} tog FILES_LINKS f"
+            )
+        else:
+            fl = "Disabled"
+            buttons.data_button(
+                "Enable FILES LINKS", f"userset {user_id} tog FILES_LINKS t"
+            )
+
         buttons.data_button(
             "Thumbnail Layout", f"userset {user_id} menu THUMBNAIL_LAYOUT"
         )
@@ -169,7 +194,15 @@ async def get_user_settings(from_user, stype="main"):
             thumb_layout = Config.THUMBNAIL_LAYOUT
         else:
             thumb_layout = "None"
-
+        buttons.data_button(
+            "Clone Dump Chats", f"userset {user_id} menu CLONE_DUMP_CHATS"
+        )
+        if user_dict.get("CLONE_DUMP_CHATS", False):
+            cdc = user_dict["CLONE_DUMP_CHATS"]
+        elif "CLONE_DUMP_CHATS" not in user_dict and Config.CLONE_DUMP_CHATS:
+            cdc = Config.CLONE_DUMP_CHATS
+        else:
+            cdc = "None"
         buttons.data_button("Back", f"userset {user_id} back")
         buttons.data_button("Close", f"userset {user_id} close")
 
@@ -181,9 +214,11 @@ Equal Splits is <b>{equal_splits}</b>
 Media Group is <b>{media_group}</b>
 Leech Prefix is <code>{escape(lprefix)}</code>
 Leech Destination is <code>{leech_dest}</code>
+Clone Dump Chats is <code>{cdc}</code>
 Leech by <b>{leech_method}</b> session
-HYBRID Leech is <b>{hybrid_leech}</b>
+Hybrid Leech is <b>{hybrid_leech}</b>
 Thumbnail Layout is <b>{thumb_layout}</b>
+Files Links is <b>{fl}</b>
 """
     elif stype == "rclone":
         buttons.data_button("Rclone Config", f"userset {user_id} menu RCLONE_CONFIG")
@@ -243,10 +278,31 @@ Gdrive Token <b>{tokenmsg}</b>
 Gdrive ID is <code>{gdrive_id}</code>
 Index URL is <code>{index}</code>
 Stop Duplicate is <b>{sd_msg}</b>"""
+    elif stype == "uploaders":
+        buttons.data_button(
+            "Buzzheavier Account ID", f"userset {user_id} menu BUZZHEAVIER_ACCOUNT_ID"
+        )
+        buttons.data_button(
+            "Buzzheavier Folder ID", f"userset {user_id} menu BUZZHEAVIER_FOLDER_ID"
+        )
+        buttons.data_button("Back", f"userset {user_id} back")
+        buttons.data_button("Close", f"userset {user_id} close")
+        if user_dict.get("BUZZHEAVIER_ACCOUNT_ID", False):
+            bh_acc = user_dict["BUZZHEAVIER_ACCOUNT_ID"]
+        else:
+            bh_acc = "None"
+        if user_dict.get("BUZZHEAVIER_FOLDER_ID", False):
+            bh_fol = user_dict["BUZZHEAVIER_FOLDER_ID"]
+        else:
+            bh_fol = "None"
+        text = f"""<u>Uploaders Settings for {name}</u>
+Buzzheavier Account ID: {bh_acc}
+Buzzheavier Folder ID: {bh_fol}"""
     else:
         buttons.data_button("Leech", f"userset {user_id} leech")
         buttons.data_button("Rclone", f"userset {user_id} rclone")
         buttons.data_button("Gdrive API", f"userset {user_id} gdrive")
+        buttons.data_button("Uploaders", f"userset {user_id} uploaders")
 
         upload_paths = user_dict.get("UPLOAD_PATHS", {})
         if not upload_paths and "UPLOAD_PATHS" not in user_dict and Config.UPLOAD_PATHS:
@@ -294,7 +350,12 @@ Stop Duplicate is <b>{sd_msg}</b>"""
         else:
             inc_ex = "None"
 
-        ns_msg = "Added" if user_dict.get("NAME_SUBSTITUTE", False) else "None"
+        if user_dict.get("NAME_SUBSTITUTE", False):
+            ns_msg = "Added"
+        elif "NAME_SUBSTITUTE" not in user_dict and Config.NAME_SUBSTITUTE:
+            ns_msg = "Added"
+        else:
+            ns_msg = "None"
         buttons.data_button(
             "Name Substitute", f"userset {user_id} menu NAME_SUBSTITUTE"
         )
@@ -306,6 +367,16 @@ Stop Duplicate is <b>{sd_msg}</b>"""
             ytopt = Config.YT_DLP_OPTIONS
         else:
             ytopt = "None"
+
+        buttons.data_button(
+            "Gallery-DL Options", f"userset {user_id} menu GALLERY_DL_OPTIONS"
+        )
+        if user_dict.get("GALLERY_DL_OPTIONS", False):
+            gdlopt = user_dict["GALLERY_DL_OPTIONS"]
+        elif "GALLERY_DL_OPTIONS" not in user_dict and Config.GALLERY_DL_OPTIONS:
+            gdlopt = Config.GALLERY_DL_OPTIONS
+        else:
+            gdlopt = "None"
 
         buttons.data_button("FFmpeg Cmds", f"userset {user_id} menu FFMPEG_CMDS")
         if user_dict.get("FFMPEG_CMDS", False):
@@ -333,9 +404,11 @@ Included Extensions is <code>{inc_ex}</code>
 
 YT-DLP Options is <code>{ytopt}</code>
 
+Gallery-DL Options is <code>{gdlopt}</code>
+
 FFMPEG Commands is <b>{ffc}</b>"""
 
-    return text, buttons.build_menu(1)
+    return text, buttons.build_menu(2)
 
 
 async def update_user_settings(query, stype="main"):
@@ -363,11 +436,13 @@ async def add_file(_, message, ftype):
         await makedirs(rpath, exist_ok=True)
         des_dir = f"{rpath}{user_id}.conf"
         await message.download(file_name=des_dir)
+        chmod(des_dir, 0o600)
     elif ftype == "TOKEN_PICKLE":
         tpath = f"{getcwd()}/tokens/"
         await makedirs(tpath, exist_ok=True)
         des_dir = f"{tpath}{user_id}.pickle"
         await message.download(file_name=des_dir)
+        chmod(des_dir, 0o600)
     update_user_ldata(user_id, ftype, des_dir)
     await delete_message(message)
     await database.update_user_doc(user_id, ftype, des_dir)
@@ -381,12 +456,12 @@ async def add_one(_, message, option):
     value = message.text
     if value.startswith("{") and value.endswith("}"):
         try:
-            value = eval(value)
-            if user_dict[option]:
+            value = _parse_dict(value)
+            if user_dict.get(option):
                 user_dict[option].update(value)
             else:
                 update_user_ldata(user_id, option, value)
-        except Exception as e:
+        except (ValueError, SyntaxError) as e:
             await send_message(message, str(e))
             return
     else:
@@ -432,11 +507,16 @@ async def set_option(_, message, option):
             value.append(x.strip().lower())
     elif option == "INDEX_URL":
         value = value
-    elif option in ["UPLOAD_PATHS", "FFMPEG_CMDS", "YT_DLP_OPTIONS"]:
+    elif option in [
+        "UPLOAD_PATHS",
+        "FFMPEG_CMDS",
+        "YT_DLP_OPTIONS",
+        "GALLERY_DL_OPTIONS",
+    ]:
         if value.startswith("{") and value.endswith("}"):
             try:
-                value = eval(value)
-            except Exception as e:
+                value = _parse_dict(value)
+            except (ValueError, SyntaxError) as e:
                 await send_message(message, str(e))
                 return
         else:
@@ -473,7 +553,7 @@ async def get_menu(option, message, user_id):
     elif option in user_dict and user_dict[option]:
         if option == "THUMBNAIL":
             buttons.data_button("View", f"userset {user_id} view {option}")
-        elif option in ["YT_DLP_OPTIONS", "UPLOAD_PATHS"]:
+        elif option in ["YT_DLP_OPTIONS", "UPLOAD_PATHS", "GALLERY_DL_OPTIONS"]:
             buttons.data_button("Add one", f"userset {user_id} addone {option}")
             buttons.data_button("Remove one", f"userset {user_id} rmone {option}")
     if option in leech_options:
@@ -482,6 +562,8 @@ async def get_menu(option, message, user_id):
         back_to = "rclone"
     elif option in gdrive_options:
         back_to = "gdrive"
+    elif option in uploaders_options:
+        back_to = "uploaders"
     else:
         back_to = "back"
     buttons.data_button("Back", f"userset {user_id} {back_to}")
@@ -601,9 +683,10 @@ async def edit_user_settings(client, query):
     user_dict = user_data.get(user_id, {})
     if user_id != int(data[1]):
         await query.answer("Not Yours!", show_alert=True)
+        return
     elif data[2] == "setevent":
         await query.answer()
-    elif data[2] in ["leech", "gdrive", "rclone"]:
+    elif data[2] in ["leech", "gdrive", "rclone", "uploaders"]:
         await query.answer()
         await update_user_settings(query, data[2])
     elif data[2] == "menu":
@@ -631,7 +714,7 @@ async def edit_user_settings(client, query):
             text = "Send token.pickle. Timeout: 60 sec"
         buttons.data_button("Back", f"userset {user_id} setevent")
         buttons.data_button("Close", f"userset {user_id} close")
-        await edit_message(message, text, buttons.build_menu(1))
+        await edit_message(message, text, buttons.build_menu(2))
         pfunc = partial(add_file, ftype=data[3])
         await event_handler(
             client,
@@ -668,7 +751,7 @@ async def edit_user_settings(client, query):
             func = remove_one
         buttons.data_button("Back", f"userset {user_id} setevent")
         buttons.data_button("Close", f"userset {user_id} close")
-        await edit_message(message, text, buttons.build_menu(1))
+        await edit_message(message, text, buttons.build_menu(2))
         pfunc = partial(func, option=data[3])
         await event_handler(client, query, pfunc)
         await get_menu(data[3], message, user_id)
@@ -683,7 +766,7 @@ async def edit_user_settings(client, query):
                 fpath = token_pickle
             if await aiopath.exists(fpath):
                 await remove(fpath)
-            del user_dict[data[3]]
+            user_dict.pop(data[3], None)
             await database.update_user_doc(user_id, data[3])
         else:
             update_user_ldata(user_id, data[3], "")

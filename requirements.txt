@@ -6,6 +6,7 @@ apscheduler
 aioaria2
 aioqbt
 cloudscraper
+defusedxml
 dnspython
 fastapi
 feedparser
@@ -31,4 +32,5 @@ urllib3
 uvicorn
 uvloop
 xattr
+gallery-dl
 yt-dlp[default,curl-cffi]

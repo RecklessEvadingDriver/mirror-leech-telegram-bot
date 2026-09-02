@@ -94,7 +94,7 @@ def create_cancel_buttons(is_sudo, user_id=""):
         "Uploading", f"canall ms {MirrorStatus.STATUS_UPLOAD} {user_id}"
     )
     buttons.data_button("Seeding", f"canall ms {MirrorStatus.STATUS_SEED} {user_id}")
-    buttons.data_button("Spltting", f"canall ms {MirrorStatus.STATUS_SPLIT} {user_id}")
+    buttons.data_button("Splitting", f"canall ms {MirrorStatus.STATUS_SPLIT} {user_id}")
     buttons.data_button("Cloning", f"canall ms {MirrorStatus.STATUS_CLONE} {user_id}")
     buttons.data_button(
         "Extracting", f"canall ms {MirrorStatus.STATUS_EXTRACT} {user_id}"
@@ -148,8 +148,9 @@ async def cancel_all_update(_, query):
     is_sudo = await CustomFilters.sudo("", query)
     if not is_sudo and user_id and user_id != query.from_user.id:
         await query.answer("Not Yours!", show_alert=True)
-    else:
-        await query.answer()
+        return
+
+    await query.answer()
     if data[1] == "close":
         await delete_message(reply_to)
         await delete_message(message)
